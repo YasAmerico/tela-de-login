@@ -71,3 +71,72 @@ def token_requerido(f):
             return jsonify({"mensagem":"Token expitado"})
         except jwt.ExpiredSignatureError
             return jsonify({"mensagem":"Token inválido"})
+        
+        return f(*args, **kwargs)
+    return decorated
+
+#rota protegida (somente acessível com token válido)
+@app.route('/register',methods=['GET'])
+@token_requerido
+def rota_protegida():
+    return jsonify({"mensagem":"Acesso permitido","userid":request.userid})
+
+#endpoint para criar um novo usuário com senha (CREATE)
+#http://localhost:5000/register
+@app.route('/register',methods=['POST'])
+def register_user ():
+    data = request.get_json()
+    username = data.get('username')
+    email = data.get ('email')
+    password = data.get('password')
+
+    if not username or not email or not password:
+        return jsonify({'error':'username, email,password are required'})#,400
+    
+    #hash da senha antes de salvar no banco de dados
+    hashed_password = generate_password_hash(password)
+
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('INSERT INTO users(username,email,password)VALUES (?,?,?)', 
+                   (username,email,hashed_password))
+    db.commit()
+    return jsonify ({'id':cursor.lastrowid,'username':username,'email':email})
+
+#endpoint de login que gera e retorna um token  de acesso (LOGIN)
+@app.route('/login',methods=['POST'])
+def login():
+     data = request.get_json()
+     username = data.get('username')
+     password = data.get('password')
+
+     if not username or not password:
+          return jsonify({'error':'usuario e senha é requerido'})
+     
+     bd = get_db()
+     cursor = bd.cursor()
+     cursor.execute('SELECTE *FROM users where username = ?',(username,))
+     user = cursor.fetchone()
+
+     #print (user[0],user[1])
+
+     if user is None or not check_password_hash(user[3],password):
+          return jsonify({'error':'usuario ou senha incorreto'}),
+
+
+    #se o login for bvem-sucedido,gera um token JWT
+    token = generate_token(username,user[0])
+
+    return jsonify({'mensage':'login sucesso','token':token})
+
+
+#fecha a conexão com o banco de dados ao finalizar a requisição
+@app.teardown_appcontext
+def close_connection(exception):
+     db=getattr(g,'_database',None)
+     if db is not None:
+        db.close()
+
+if _name_=='_main_':
+     init_db()#Inicializar o banco de dados ao iniciar o app
+     app.run(debug=True)
